@@ -34,5 +34,5 @@ ansible vm1 -i inventory.ini -m shell -a "mc cp /tmp/test.jpg myminio/mybucket/t
 python3 download.py
 
 
-## Так как не был указан какой тип балансировщика использовать, использовал дефолтный - Round Robin
+## Так как не было указано какой тип балансировщика использовать на Nginx, использовал дефолтный - Round Robin
 
