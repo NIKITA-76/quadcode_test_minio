@@ -3,9 +3,4 @@
 venv/
 __pycache__/
 *.pyc
-*.py
 *.jpg
-*.ini
-*.yml
-vault/
-*file

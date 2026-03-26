@@ -1,0 +1,154 @@
+---
+- name: Установить и настроить Minio + Nginx
+  hosts: minio_nodes
+  become: true  # sudo
+
+  vars_files:
+    # secrets.yml — наш зашифрованный vault файл
+    # minio_root_user и minio_root_password берутся отсюда
+     - vault/secret.yml  
+  
+  
+  vars:
+    # Версия Minio
+    minio_version: "RELEASE.2024-01-01T00-00-00Z"
+    # Директория где Minio будет хранить данные
+    minio_data_dir: /data/minio
+    # Порт на котором слушает Minio
+    minio_port: 9000
+    # Порт консоли Minio
+    minio_console_port: 9001
+    # Логин и пароль администратора
+    # Список всех нод для distributed режима
+    minio_nodes:
+      - 192.168.56.11
+      - 192.168.56.12
+      - 192.168.56.13
+
+  tasks:
+
+    - name: Отформатировать диск в ext4
+      filesystem:
+        fstype: ext4
+        dev: /dev/sdc
+
+    - name: Создать точку монтирования
+      file:
+        path: /minio-data
+        state: directory
+        mode: '0755'
+
+    - name: Смонтировать диск
+      mount:
+        path: /minio-data
+        src: /dev/sdc
+        fstype: ext4
+        opts: defaults
+        state: mounted
+
+    - name: Создать директорию для данных Minio
+      file:
+        path: "{{ minio_data_dir }}"
+        state: directory
+        owner: root
+        mode: '0755'
+
+    - name: Скачать бинарник Minio
+      get_url:
+        url: "https://dl.min.io/server/minio/release/linux-amd64/minio"
+        dest: /usr/local/bin/minio
+        mode: '0755'
+
+    - name: Создать systemd сервис для Minio
+      copy:
+        dest: /etc/systemd/system/minio.service
+        content: |
+          [Unit]
+          Description=MinIO
+          After=network.target
+
+          [Service]
+          Environment="MINIO_ROOT_USER={{ minio_root_user }}"
+          Environment="MINIO_ROOT_PASSWORD={{ minio_root_password }}"
+          ExecStart=/usr/local/bin/minio server \
+            http://192.168.56.11:{{ minio_port }}/minio-data \
+            http://192.168.56.12:{{ minio_port }}/minio-data \
+            http://192.168.56.13:{{ minio_port }}/minio-data \
+            --console-address ":{{ minio_console_port }}"
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart minio
+
+
+    - name: Перечитать конфиги systemd
+      systemd:
+        daemon_reload: true
+
+
+    - name: Запустить и включить Minio
+      systemd:
+        name: minio
+        state: started
+        enabled: true
+
+    - name: Установить Nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Настроить Nginx как балансировщик для Minio
+      copy:
+        dest: /etc/nginx/sites-available/minio
+        content: |
+          upstream minio_backend {
+            server 192.168.56.11:9000;
+            server 192.168.56.12:9000;
+            server 192.168.56.13:9000;
+          }
+
+          server {
+            listen 80;
+
+            location / {
+              proxy_pass http://minio_backend;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            }
+          }
+      notify: restart nginx
+
+    - name: Включить конфиг Nginx
+      file:
+        src: /etc/nginx/sites-available/minio
+        dest: /etc/nginx/sites-enabled/minio
+        state: link
+      notify: restart nginx
+
+    - name: Удалить дефолтный конфиг Nginx
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: restart nginx
+
+    - name: Запустить Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: restart minio
+      systemd:
+        name: minio
+        state: restarted
+        daemon_reload: true
+
+    - name: restart nginx
+      systemd:
+        name: nginx
+        state: restarted
