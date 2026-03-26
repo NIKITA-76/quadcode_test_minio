@@ -8,7 +8,6 @@ ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
 ## Устанавливаем mc для Minio на все хосты
 ansible all -i inventory.ini -m get_url -a "url=https://dl.min.io/client/mc/release/linux-amd64/mc dest=/usr/local/bin/mc mode=0755" --become
 
-
 ## Создать алиас myminio
 ansible vm1 -i inventory.ini -m shell -a "mc alias set myminio http://127.0.0.1:9000 minioadmin minioadmin123" --become
 ##### Эту команду я бы засунул в плейбук чтобы использовать пароли из vault, но по условию тествого было сказано именно через ad-hoc 
@@ -34,4 +33,6 @@ ansible vm1 -i inventory.ini -m shell -a "mc cp /tmp/test.jpg myminio/mybucket/t
 ## Скачать файл со смещением 1000 байт
 python3 download.py
 
+
+## Так как не был указан какой типа балансировщика использовать, использовал дефолтный - Round Robin
 
